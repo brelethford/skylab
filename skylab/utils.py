@@ -26,7 +26,7 @@ Helper methods for the other classes
 
 import numpy as np
 from scipy.signal import convolve
-from scipy.stats import chi2, kstest, poisson
+from scipy.stats import chi2, kstest, poisson, exponweib
 
 
 def kernel_func(X, Y):
@@ -186,6 +186,93 @@ class delta_chi2(object):
 
     def __str__(self):
         return ("Delta Distribution plus chi-square {0:s}\n".format(
+                    self.__repr__())
+               +"\tSeparation factor = {0:8.3%} +/- {1:8.3%}\n".format(
+                    self.eta, self.eta_err)
+               +"\t\tNDoF  = {0:6.2f}\n".format(self.par[0])
+               +"\t\tMean  = {0:6.2f}\n".format(self.par[1])
+               +"\t\tScale = {0:6.2f}\n".format(self.par[2])
+               +"\t\tKS    = {0:7.2%}".format(self.ks)
+               )
+
+    def pdf(self, x):
+        """ Probability density function.
+        """
+        return np.where(x > 0, self.eta * self.f.pdf(x), 1. - self.eta)
+
+    def logpdf(self, x):
+        """ Logarithmic pdf.
+        """
+        return np.where(x > 0, np.log(self.eta) + self.f.logpdf(x),
+                               np.log(1. - self.eta))
+
+    def cdf(self, x):
+        """ Probability mass function.
+        """
+        return (1. - self.eta) + self.eta * self.f1.cdf(x)
+
+    def logcdf(self, x):
+        """ Logarithmic cdf.
+        """
+        return np.log(1. - self.eta) + np.log(self.eta) + self.f1.logcdf(x)
+
+    def sf(self, x):
+        """ Survival probability function.
+        """
+        return np.where(x > 0, self.eta * self.f.sf(x), 1.)
+
+    def logsf(self, x):
+        """ Logarithmic sf.
+        """
+        return np.where(x > 0, np.log(self.eta) + self.f.logsf(x), 0.)
+
+    def isf(self, x):
+        """ Inverse survival function.
+        """
+        return np.where(x < self.eta, self.f.isf(x/self.eta), 0.)
+
+class weib(object):
+    """ A probability density function similar to scipy's rvs functions.
+    It consisist of a weibull distribution plus a delta-distribution at zero.
+
+    """
+
+    def __init__(self, data, **kwargs):
+        """ Constructor, evaluates the percentage of events equal to zero and
+        fits a weibull to the rest of the data.
+
+        Parameters
+        -----------
+        data : array
+            Data values to be fit
+
+        """
+        data = np.asarray(data)
+
+        if len(data) == 2:
+            self.eta = data[0]
+            self.par = [data[1], 0., 1.]
+
+            self.eta_err = np.nan
+            self.ks = np.nan
+
+            self.f = exponweib(*self.par)
+
+            return
+
+        self.par = exponweib.fit(data[data > 0], **kwargs)
+
+        self.f = exponweib(*self.par)
+
+        self.eta = float(np.count_nonzero(data > 0)) / len(data)
+        self.eta_err = np.sqrt(self.eta * (1. - self.eta) / len(data))
+
+        self.ks = kstest(data[data > 0], "exponweib", args=self.par)[0]
+
+        return
+
+    def __str__(self):
+        return ("Delta Distribution plus weibull {0:s}\n".format(
                     self.__repr__())
                +"\tSeparation factor = {0:8.3%} +/- {1:8.3%}\n".format(
                     self.eta, self.eta_err)
